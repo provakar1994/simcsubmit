@@ -1,6 +1,6 @@
 # simcsubmit
 
-Small helper for generating, submitting, finishing, and copying SIMC jobs.
+Small helper for generating, submitting, finishing, and moving SIMC jobs.
 
 Clone or copy this directory inside a `simc_gfortran` checkout:
 
@@ -219,14 +219,14 @@ large submissions.
 
 ## Output Layout
 
-After `finish`, ROOT files are copied directly into `--outdir`:
+After `finish`, the weighted ROOT file is moved directly into `--outdir`.
+The original unweighted ROOT file is removed after the fWeight file is created:
 
 ```text
-outdir/<stem>.root
 outdir/wfWeight_<stem>.root
 ```
 
-SIMC text/log/input files are copied into `--outdir/simcout`:
+SIMC text/log/input files are moved into `--outdir/simcout`:
 
 ```text
 outdir/simcout/<stem>.inp

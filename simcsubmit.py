@@ -509,7 +509,7 @@ begin parm beamandtargetinfo
   targ%xoffset = 0.00           ;  target x-offset (cm): +x = beam right
   targ%yoffset = 0.0            ;  target y-offset (cm): +y = up
   targ%zoffset = 0.0            ;  target z-offset (cm): +z = downstream, zreal = znominal + zoffset
-end parm beamandtergetinfo
+end parm beamandtargetinfo
 
 begin parm spect_offset
   spec%e%offset%x = 0.0         ;  x offset (cm)
@@ -604,7 +604,46 @@ if [ -f "$SETUP_ENV" ]; then
 fi
 
 cd "$SIMC_DIR"
-./run_simc_tree "$STEM"
+
+./simc <<EOF > "runout/${{STEM}}.out"
+${{STEM}}
+EOF
+
+if [ ! -s "outfiles/${{STEM}}.hist" ]; then
+  echo "ERROR: SIMC did not create outfiles/${{STEM}}.hist"
+  echo "Last lines from runout/${{STEM}}.out:"
+  tail -80 "runout/${{STEM}}.out" || true
+  exit 1
+fi
+
+if [ ! -s "worksim/${{STEM}}.bin" ]; then
+  echo "ERROR: SIMC did not create a non-empty worksim/${{STEM}}.bin"
+  echo "Last lines from runout/${{STEM}}.out:"
+  tail -80 "runout/${{STEM}}.out" || true
+  exit 1
+fi
+
+cd "$SIMC_DIR/util/root_tree"
+set +e
+./make_root_tree <<EOF
+${{STEM}}
+EOF
+TREE_STATUS=$?
+set -e
+
+cd "$SIMC_DIR"
+
+if [ ! -s "worksim/${{STEM}}.root" ]; then
+  echo "ERROR: make_root_tree did not create worksim/${{STEM}}.root"
+  echo "make_root_tree exit status: $TREE_STATUS"
+  exit 1
+fi
+
+if [ "$TREE_STATUS" -ne 0 ]; then
+  echo "WARNING: make_root_tree exited with status $TREE_STATUS, but worksim/${{STEM}}.root exists; continuing"
+fi
+
+rm -f "worksim/${{STEM}}.bin"
 
 python3 {shquote(str(py))} finish --simc-dir "$SIMC_DIR" --stem "$STEM" --outdir "$OUTDIR"{overwrite_flag}
 """
@@ -701,32 +740,36 @@ def add_fweight(simc_dir: Path, stem: str, overwrite: bool) -> Path:
     histfile = simc_dir / "outfiles" / f"{stem}.hist"
     rootfile = simc_dir / "worksim" / f"{stem}.root"
     weighted = simc_dir / "worksim" / f"wfWeight_{stem}.root"
+    if weighted.exists() and not overwrite:
+        print(f"exists   {weighted}")
+        if rootfile.exists():
+            print(f"remove   {rootfile}")
+            rootfile.unlink()
+        return weighted
     if not histfile.exists():
         raise SystemExit(f"ERROR: missing hist file: {histfile}")
     if not rootfile.exists():
         raise SystemExit(f"ERROR: missing root file: {rootfile}")
-    if weighted.exists() and not overwrite:
-        print(f"exists   {weighted}")
-        return weighted
     fnorm = norm_factor(histfile)
     macro = Path(__file__).resolve().parent / "add_fWeight.cpp"
     print(f"fWeight  {rootfile}  norm={fnorm}")
-    subprocess.run(["root", "-l", "-b", "-q", f'{macro}("{rootfile}",{fnorm})'], check=True)
+    subprocess.run(["root", "-l", "-b", "-q", "-n", f'{macro}("{rootfile}",{fnorm})'], check=True)
+    if not weighted.exists():
+        raise SystemExit(f"ERROR: fWeight macro did not create {weighted}")
+    print(f"remove   {rootfile}")
+    rootfile.unlink()
     return weighted
 
 
-def copy_outputs(simc_dir: Path, stem: str, outdir: Path, dry_run: bool) -> None:
+def move_outputs(simc_dir: Path, stem: str, outdir: Path, dry_run: bool) -> None:
     root_sources = [
-        simc_dir / "worksim" / f"{stem}.root",
         simc_dir / "worksim" / f"wfWeight_{stem}.root",
     ]
     simcout_sources = [
         simc_dir / "infiles" / f"{stem}.inp",
         simc_dir / "runout" / f"{stem}.out",
-        simc_dir / "outfiles" / f"{stem}.hist",
-        simc_dir / "outfiles" / f"{stem}.gen",
-        simc_dir / "outfiles" / f"{stem}.geni",
     ]
+    outfile_sources = sorted((simc_dir / "outfiles").glob(f"{stem}*"))
     simcout_dir = outdir / "simcout"
     if dry_run:
         print(f"would mkdir {outdir}")
@@ -735,17 +778,27 @@ def copy_outputs(simc_dir: Path, stem: str, outdir: Path, dry_run: bool) -> None
         outdir.mkdir(parents=True, exist_ok=True)
         simcout_dir.mkdir(parents=True, exist_ok=True)
     for src in root_sources:
-        copy_one(src, outdir, dry_run)
+        move_one(src, outdir, dry_run)
     for src in simcout_sources:
-        copy_one(src, simcout_dir, dry_run)
+        move_one(src, simcout_dir, dry_run)
+    if outfile_sources:
+        for src in outfile_sources:
+            move_one(src, simcout_dir, dry_run)
+    else:
+        print(f"missing   {simc_dir / 'outfiles' / f'{stem}*'}")
 
 
-def copy_one(src: Path, dst_dir: Path, dry_run: bool) -> None:
+def move_one(src: Path, dst_dir: Path, dry_run: bool) -> None:
+    if dry_run:
+        dst = dst_dir / src.name
+        print(f"would move {src} -> {dst}")
+        return
     if src.exists():
         dst = dst_dir / src.name
-        print(f"{'would copy' if dry_run else 'copy':<10} {src} -> {dst}")
-        if not dry_run:
-            shutil.copy2(src, dst)
+        print(f"{'move':<10} {src} -> {dst}")
+        if dst.exists():
+            dst.unlink()
+        shutil.move(str(src), str(dst))
     else:
         print(f"missing   {src}")
 
@@ -754,9 +807,10 @@ def finish_stems(stems: Iterable[str], simc_dir: Path, outdir: Path, args: argpa
     for stem in stems:
         if args.dry_run:
             print(f"would add fWeight for {stem}")
+            print(f"would remove {simc_dir / 'worksim' / f'{stem}.root'}")
         else:
             add_fweight(simc_dir, stem, overwrite=args.overwrite_fweight)
-        copy_outputs(simc_dir, stem, outdir, args.dry_run)
+        move_outputs(simc_dir, stem, outdir, args.dry_run)
 
 
 def print_plan(jobs: list[SimcJob], simc_dir: Path) -> None:
@@ -797,7 +851,7 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_output_args(parser: argparse.ArgumentParser, required: bool = True) -> None:
-    parser.add_argument("--outdir", help="Directory to copy completed outputs into")
+    parser.add_argument("--outdir", help="Directory to move completed outputs into")
 
 
 def require_args(args: argparse.Namespace, names: list[str]) -> None:
@@ -863,14 +917,14 @@ def main(argv: list[str] | None = None) -> int:
     p_submit.add_argument("--swif-partition")
     p_submit.add_argument("--swif-cores", type=int)
 
-    p_finish = sub.add_parser("finish", help="Add fWeight and copy outputs")
+    p_finish = sub.add_parser("finish", help="Add fWeight and move outputs")
     add_common_args(p_finish)
     p_finish.add_argument("--stem", action="append", help="Specific SIMC stem to finish; repeatable")
     add_selection_args(p_finish, require_settings=False)
     add_output_args(p_finish)
     p_finish.add_argument("--overwrite-fweight", action="store_true", default=None)
 
-    p_all = sub.add_parser("all", help="Generate, run locally on ifarm, add fWeight, and copy")
+    p_all = sub.add_parser("all", help="Generate, run locally on ifarm, add fWeight, and move outputs")
     add_common_args(p_all)
     add_selection_args(p_all)
     add_output_args(p_all)
