@@ -942,8 +942,21 @@ def main(argv: list[str] | None = None) -> int:
     add_common_args(p_all)
     add_selection_args(p_all)
     add_output_args(p_all)
+    p_all.add_argument("--backend", choices=["ifarm", "swif2"])
+    p_all.add_argument("--workflow", help="SWIF2 workflow name")
+    p_all.add_argument(
+        "--no-run",
+        action="store_true",
+        default=None,
+        help="For SWIF2: add jobs but do not start workflow",
+    )
     p_all.add_argument("--overwrite-infiles", action="store_true", default=None)
     p_all.add_argument("--overwrite-fweight", action="store_true", default=None)
+    p_all.add_argument("--swif-disk")
+    p_all.add_argument("--swif-ram")
+    p_all.add_argument("--swif-time")
+    p_all.add_argument("--swif-partition")
+    p_all.add_argument("--swif-cores", type=int)
 
     config_defaults = load_config(find_config_arg(argv))
     args = parser.parse_args(argv)
@@ -1002,16 +1015,18 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "all":
-        args.backend = "ifarm"
         generate_infiles(jobs, simc_dir, args.dry_run, args.overwrite_infiles)
-        for job in jobs:
-            run_ifarm_job(
-                job,
-                simc_dir,
-                Path(args.outdir).expanduser(),
-                dry_run=args.dry_run,
-                overwrite=args.overwrite_fweight,
-            )
+        if args.backend == "ifarm":
+            for job in jobs:
+                run_ifarm_job(
+                    job,
+                    simc_dir,
+                    Path(args.outdir).expanduser(),
+                    dry_run=args.dry_run,
+                    overwrite=args.overwrite_fweight,
+                )
+        else:
+            submit_swif2(jobs, simc_dir, Path(args.outdir).expanduser(), args)
         return 0
 
     raise SystemExit(f"ERROR: unknown command {args.command}")
