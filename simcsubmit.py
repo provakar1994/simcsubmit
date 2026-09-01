@@ -26,8 +26,8 @@ DEFAULT_NGEN = 100000
 DEFAULT_BACKEND = "ifarm"
 MAX_RANDOM_SEED = 2_147_483_647
 SWIF_DEFAULTS = {
-    "disk": "4GB",
-    "ram": "2GB",
+    "disk": "1GB",
+    "ram": "1GB",
     "time": "2h",
     "partition": "production",
     "cores": 1,
