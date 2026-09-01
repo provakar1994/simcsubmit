@@ -1,0 +1,26 @@
+# Example campaign config. Relative paths are resolved from this file's directory.
+
+settings: ../settings/rpr1_all_settings.csv
+simc_dir: ../..
+
+target: LH2
+particle: pim
+ebeam: 10.6716
+x: 0.25
+
+backend: swif2
+workflow: simc_LH2_pim_x0p25
+outdir: /path/to/output
+
+# If job_spec is omitted, simcsubmit uses all valid reactions with job0 and
+# the hardcoded default ngen.
+job_spec:
+  - sidis:1:10:100000
+  - rho:1:5:50000
+
+swif:
+  disk: 4GB
+  ram: 2GB
+  time: 2h
+  partition: production
+  cores: 1
