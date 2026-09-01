@@ -1,0 +1,28 @@
+# Example campaign config. Relative paths are resolved from this file's directory.
+
+settings: ../settings/rpr1_all_settings.csv
+simc_dir: ../../simc_gfortran
+
+target: C
+particle: pip
+ebeam: 10.6716
+x: 0.25
+
+backend: swif2
+workflow: simc_C_pip_e10p7_x0p25_q23p3
+outdir: /w/hallc-scshelf2102/c-rsidis/pdbforce/simcout
+
+# If job_spec is omitted, simcsubmit uses all valid reactions with job0 and
+# the hardcoded default ngen.
+job_spec:
+  - sidis:0:1:100000
+  - excl:0:1:100000
+  - delta:0:1:100000
+  - rho:0:1:10000
+
+swif:
+  disk: 1GB
+  ram: 1GB
+  time: 2h
+  partition: production
+  cores: 1
