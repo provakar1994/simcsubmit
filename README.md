@@ -184,6 +184,12 @@ reaction:firstjob:njobs:ngen
 
 If any `--job-spec` is provided, only the listed reactions are generated.
 
+## Random Seeds
+
+Each generated input file gets an explicit positive `random_seed` from OS
+randomness. Multiple jobs in the same command are also checked for duplicate
+seeds before the input files are written.
+
 ## SWIF2 Options
 
 Defaults:
